@@ -13,6 +13,7 @@ import apps.wallet
 import apps.ethereum
 import apps.lisk
 import apps.nem
+import apps.stellar
 if __debug__:
     import apps.debug
 else:
@@ -25,6 +26,7 @@ apps.wallet.boot()
 apps.ethereum.boot()
 apps.lisk.boot()
 apps.nem.boot()
+apps.stellar.boot()
 if __debug__:
     apps.debug.boot()
 else:
