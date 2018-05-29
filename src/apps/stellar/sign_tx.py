@@ -36,72 +36,12 @@ async def sign_tx_loop(ctx, msg: StellarSignTx):
 
 
 async def sign_tx(ctx, msg):
-    if msg.num_operations == 0:
-        raise ValueError('Stellar: At least one operation is required')
 
-    network_passphrase_hash = sha256(msg.network_passphrase).digest()
-
-    # Stellar transactions consist of sha256 of:
-    # - sha256(network passphrase)
-    # - 4-byte unsigned big-endian int type constant (2 for tx)
-    # - public key
-
-    w = bytearray()
-    write_bytes(w, network_passphrase_hash)
-    write_bytes(w, TX_TYPE)
-
-    node = await seed.derive_node(ctx, msg.address_n, STELLAR_CURVE)
-    pubkey = seed.remove_ed25519_public_key_prefix(node.public_key())
-    write_pubkey(w, pubkey)
-    if msg.source_account != pubkey:
-        raise ValueError('Stellar: source account does not match address_n')
+    # serialize
 
     # confirm init
-    await helpers.confirm_init(pubkey, msg.network_passphrase)
-
-    write_uint32(w, msg.fee)
-    write_uint64(w, msg.sequence_number)
-
-    # timebounds are only present if timebounds_start or timebounds_end is non-zero
-    if msg.timebounds_start or msg.timebounds_end:
-        write_bool(w, True)
-        # timebounds are sent as uint32s since that's all we can display, but they must be hashed as 64bit
-        write_uint64(w, msg.timebounds_start)
-        write_uint64(w, msg.timebounds_end)
-    else:
-        write_bool(w, False)
-
-    write_uint32(w, msg.memo_type)
-    if msg.memo_type == consts.MEMO_TYPE_NONE:
-        # nothing is serialized
-        memo_confirm_text = ''
-    elif msg.memo_type == consts.MEMO_TYPE_TEXT:
-        # Text: 4 bytes (size) + up to 28 bytes
-        if len(msg.memo_text) > 28:
-            raise ValueError('Stellar: max length of a memo text is 28 bytes')
-        write_string(w, msg.memo_text)
-        memo_confirm_text = msg.memo_text
-    elif msg.memo_type == consts.MEMO_TYPE_ID:
-        # ID: 64 bit unsigned integer
-        write_uint64(w, msg.memo_id)
-        memo_confirm_text = str(msg.memo_id)
-    elif msg.memo_type in [consts.MEMO_TYPE_HASH, consts.MEMO_TYPE_RETURN]:
-        # Hash/Return: 32 byte hash
-        write_bytes(w, bytearray(msg.memo_hash))
-        memo_confirm_text = hexlify(msg.memo_hash).decode()
-    else:
-        raise ValueError('Stellar invalid memo type')
-    await helpers.confirm_memo(msg.memo_type, memo_confirm_text)
-
-    write_uint32(w, msg.num_operations)
-    for i in range(msg.num_operations):
-        op = yield StellarTxOpRequest()
-        serialize_op(w, op)
-
-    # 4 null bytes representing a (currently unused) empty union
-    write_uint32(w, 0)
-
-    # confirms
+    await helpers.confirm_init(msg.pubkey, msg.network_passphrase)
+    await helpers.confirm_memo(msg.memo_type, msg.memo_text)
     await helpers.confirm_final(msg.fee, msg.num_operations)
 
     # sign
