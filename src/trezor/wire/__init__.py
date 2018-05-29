@@ -117,7 +117,7 @@ async def session_handler(iface, sid):
                 await w
             finally:
                 workflow.onclose(w)
-                utils.unimport_end(m)
+                # utils.unimport_end(m)
 
         except UnexpectedMessageError as exc:
             # retry with opened reader from the exception
