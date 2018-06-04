@@ -13,37 +13,6 @@ from trezor.messages.StellarSetOptionsOp import StellarSetOptionsOp
 from apps.stellar.consts import *
 from apps.stellar.writers import *
 
-# todo layout
-
-
-def serialize_op(w, op):
-    _serialize_account(w, op.source_account)
-    write_uint32(w, get_op_code(op))
-    if isinstance(op, StellarAccountMergeOp):
-        serialize_account_merge_op(w, op)
-    elif isinstance(op, StellarAllowTrustOp):
-        serialize_allow_trust_op(w, op)
-    elif isinstance(op, StellarBumpSequenceOp):
-        serialize_bump_sequence_op(w, op)
-    elif isinstance(op, StellarChangeTrustOp):
-        serialize_change_trust_op(w, op)
-    elif isinstance(op, StellarCreateAccountOp):
-        serialize_create_account_op(w, op)
-    elif isinstance(op, StellarCreatePassiveOfferOp):
-        serialize_create_passive_offer_op(w, op)
-    elif isinstance(op, StellarManageDataOp):
-        serialize_manage_data_op(w, op)
-    elif isinstance(op, StellarManageOfferOp):
-        serialize_manage_offer_op(w, op)
-    elif isinstance(op, StellarPathPaymentOp):
-        serialize_path_payment_op(w, op)
-    elif isinstance(op, StellarPaymentOp):
-        serialize_payment_op(w, op)
-    elif isinstance(op, StellarSetOptionsOp):
-        serialize_set_options_op(w, op)
-    else:
-        raise ValueError('Stellar: unknown operation')
-
 
 def serialize_account_merge_op(w, msg: StellarAccountMergeOp):
     write_pubkey(w, msg.destination_account)
@@ -166,7 +135,7 @@ def serialize_set_options_op(w, msg: StellarSetOptionsOp):
         write_uint32(w, msg.signer_weight)
 
 
-def _serialize_account(w, source_account: bytes):
+def serialize_account(w, source_account: bytes):
     if source_account is None:
         write_bool(w, False)
         return
@@ -176,10 +145,12 @@ def _serialize_account(w, source_account: bytes):
 
 def _serialize_asset_code(w, asset_type: int, asset_code: str):
     code = bytearray(asset_code)
-    if asset_type == ASSET_TYPE_CREDIT_ALPHANUM4:
+    if asset_type == ASSET_TYPE_NATIVE:
+        return  # nothing is need
+    elif asset_type == ASSET_TYPE_ALPHANUM4:
         # pad with zeros to 4 chars
         write_bytes(w, code + bytearray([0] * (4 - len(code))))
-    elif asset_type == ASSET_TYPE_CREDIT_ALPHANUM12:
+    elif asset_type == ASSET_TYPE_ALPHANUM12:
         # pad with zeros to 12 chars
         write_bytes(w, code + bytearray([0] * (12 - len(code))))
     else:

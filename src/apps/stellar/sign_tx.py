@@ -1,6 +1,6 @@
 from apps.common import seed
 from apps.stellar.writers import *
-from apps.stellar.operations import serialize_op
+from apps.stellar.operations import operation
 from apps.stellar import layout
 from apps.stellar import consts
 from apps.stellar import helpers
@@ -9,14 +9,12 @@ from trezor.messages.StellarTxOpRequest import StellarTxOpRequest
 from trezor.messages.StellarSignedTx import StellarSignedTx
 from trezor.crypto.curve import ed25519
 from trezor.crypto.hashlib import sha256
+from trezor.loop import spawn, sleep, wait
 from ubinascii import hexlify
-
-STELLAR_CURVE = 'ed25519'
-TX_TYPE = bytearray('\x00\x00\x00\x02')
 
 
 async def sign_tx_loop(ctx, msg: StellarSignTx):
-    signer = sign_tx(msg, msg)
+    signer = sign_tx(ctx, msg)
     res = None
     while True:
         req = signer.send(res)
@@ -30,6 +28,9 @@ async def sign_tx_loop(ctx, msg: StellarSignTx):
             res = await layout.require_confirm_memo(ctx, req.memo_type, req.memo_text)
         elif isinstance(req, helpers.UiConfirmFinal):
             res = await layout.require_confirm_final(ctx, req.fee, req.num_operations)
+        elif isinstance(req, (spawn, sleep, wait)):
+            res = await req
+            continue
         else:
             raise TypeError('Stellar: Invalid signing instruction')
     return req
@@ -48,9 +49,9 @@ async def sign_tx(ctx, msg):
 
     w = bytearray()
     write_bytes(w, network_passphrase_hash)
-    write_bytes(w, TX_TYPE)
+    write_bytes(w, consts.TX_TYPE)
 
-    node = await seed.derive_node(ctx, msg.address_n, STELLAR_CURVE)
+    node = await seed.derive_node(ctx, msg.address_n, consts.STELLAR_CURVE)
     pubkey = seed.remove_ed25519_public_key_prefix(node.public_key())
     write_pubkey(w, pubkey)
     if msg.source_account != pubkey:
@@ -96,7 +97,7 @@ async def sign_tx(ctx, msg):
     write_uint32(w, msg.num_operations)
     for i in range(msg.num_operations):
         op = yield StellarTxOpRequest()
-        serialize_op(w, op)
+        await operation(ctx, w, op)
 
     # 4 null bytes representing a (currently unused) empty union
     write_uint32(w, 0)

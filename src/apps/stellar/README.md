@@ -9,3 +9,18 @@ REVIEWER = Jan Pochyla <jan.pochyla@satoshilabs.com>
 -----
 
 TODO
+
+### Signing
+
+
+Stellar transactions consist of sha256 of:
+- sha256(network passphrase)
+- 4-byte unsigned big-endian int type constant (2 for tx)
+- public key
+
+
+operations are streamed - at least one - no max limit?
+
+
+
+

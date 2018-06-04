@@ -16,6 +16,12 @@ class UiConfirmMemo:
         self.memo_text = memo_text
 
 
+class UiConfirmOperation:
+
+    def __init__(self, op):
+        self.op = op
+
+
 class UiConfirmFinal:
 
     def __init__(self, fee: int, num_operations: int):
@@ -29,6 +35,10 @@ def confirm_init(pubkey: bytes, network: str):
 
 def confirm_memo(memo_type: int, memo_text: str):
     return (yield UiConfirmMemo(memo_type, memo_text))
+
+
+def confirm_operation(op):
+    return (yield UiConfirmOperation(op))
 
 
 def confirm_final(fee: int, num_operations: int):
