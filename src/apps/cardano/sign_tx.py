@@ -7,12 +7,29 @@ from trezor.messages.MessageType import CardanoTxAck
 from trezor.ui.text import BR
 
 from .address import derive_address_and_node
-from .layout import confirm_with_pagination, progress
+from .layout import confirm_sending, confirm_transaction, progress
 
 from apps.cardano import cbor
 from apps.common import seed, storage
 from apps.common.layout import address_n_to_str, split_address
 from apps.homescreen.homescreen import display_homescreen
+
+from micropython import const
+
+
+# the maximum allowed change address.  this should be large enough for normal
+# use and still allow to quickly brute-force the correct bip32 path
+MAX_CHANGE_ADDRESS_INDEX = const(1000000)
+ACCOUNT_PREFIX_DEPTH = const(2)
+
+
+# we consider extern addresses also as change addresses as adalite is using them for this purpose
+def is_change(output, inputs):
+    for input in inputs:
+        inp = input.address_n
+        if not output[:ACCOUNT_PREFIX_DEPTH] == inp[:ACCOUNT_PREFIX_DEPTH] or not output[-2] < 2 or not output[-1] < MAX_CHANGE_ADDRESS_INDEX:
+            return False
+    return True
 
 
 async def show_tx(
@@ -24,51 +41,26 @@ async def show_tx(
     fee: float,
     tx_size: float,
     network_name: str,
+    raw_inputs: list,
+    raw_outputs: list,
 ) -> bool:
-    lines = ("%s ADA" % _micro_ada_to_ada(fee), BR, "Tx size:", "%s bytes" % tx_size)
-    if not await confirm_with_pagination(
-        ctx, lines, "Confirm fee", ui.ICON_SEND, ui.GREEN
-    ):
-        return False
-
-    if not await confirm_with_pagination(
-        ctx, "%s network" % network_name, "Confirm network", ui.ICON_SEND, ui.GREEN
-    ):
-        return False
-
     for index, output in enumerate(outputs):
-        if not await confirm_with_pagination(
-            ctx, output, "Confirm output", ui.ICON_SEND, ui.GREEN
-        ):
+        if is_change(raw_outputs[index].address_n, raw_inputs): 
+            continue
+
+        if not await confirm_sending(ctx, outcoins[index], output, "ADA"):
             return False
 
-        if not await confirm_with_pagination(
-            ctx,
-            "%s ADA" % _micro_ada_to_ada(outcoins[index]),
-            "Confirm amount",
-            ui.ICON_SEND,
-            ui.GREEN,
-        ):
-            return False
-
-    for index, change in enumerate(change_derivation_paths):
-        if not await confirm_with_pagination(
-            ctx,
-            list(split_address(address_n_to_str(change))),
-            "Confirm change",
-            ui.ICON_SEND,
-            ui.GREEN,
-        ):
-            return False
-
-        if not await confirm_with_pagination(
-            ctx,
-            "%s ADA" % _micro_ada_to_ada(change_coins[index]),
-            "Confirm amount",
-            ui.ICON_SEND,
-            ui.GREEN,
-        ):
-            return False
+    total_amount = sum(outcoins)
+    if not await confirm_transaction(
+        ctx,
+        total_amount,
+        fee,
+        tx_size,
+        network_name,
+        "ADA"
+    ):
+        return False
 
     return True
 
@@ -119,14 +111,12 @@ async def sign_tx(ctx, msg):
         transaction.fee,
         len(tx_body),
         transaction.network_name,
+        transaction.inputs,
+        transaction.outputs,
     ):
         raise wire.ActionCancelled("Signing cancelled")
 
     return tx
-
-
-def _micro_ada_to_ada(amount: float) -> float:
-    return amount / 1000000
 
 
 class Transaction:
