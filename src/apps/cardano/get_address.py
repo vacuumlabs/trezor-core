@@ -1,11 +1,11 @@
-from trezor import log, ui, wire
+from trezor import log, wire
 from trezor.crypto import bip32
 from trezor.messages.CardanoAddress import CardanoAddress
 
 from .address import derive_address_and_node
-from .layout import confirm_with_pagination
 
 from apps.common import seed, storage
+from apps.common.layout import address_n_to_str, show_address, show_qr
 
 
 async def get_address(ctx, msg):
@@ -21,11 +21,12 @@ async def get_address(ctx, msg):
         raise wire.ProcessError("Deriving address failed")
     mnemonic = None
     root_node = None
-
     if msg.show_display:
-        if not await confirm_with_pagination(
-            ctx, address, "Export address", icon=ui.ICON_SEND, icon_color=ui.GREEN
-        ):
-            raise wire.ActionCancelled("Exporting cancelled")
+        desc = address_n_to_str(msg.address_n)
+        while True:
+            if await show_address(ctx, address, desc=desc):
+                break
+            if await show_qr(ctx, address, desc=desc):
+                break
 
     return CardanoAddress(address=address)
