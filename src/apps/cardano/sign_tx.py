@@ -56,8 +56,6 @@ async def show_tx(
         ctx,
         total_amount,
         fee,
-        tx_size,
-        network_name,
         "ADA"
     ):
         return False

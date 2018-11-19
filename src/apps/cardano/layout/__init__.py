@@ -36,20 +36,14 @@ async def confirm_sending(ctx, amount, to, coin):
     return True
 
 
-async def confirm_transaction(ctx, amount, fee, tx_size, network_name, coin):
+async def confirm_transaction(ctx, amount, fee, coin):
     t1 = Text("Confirm transaction", ui.ICON_SEND, icon_color=ui.GREEN)
     t1.normal("Total amount:")
     t1.bold(format_coin_amount(amount, coin))
     t1.normal("including fee:")
     t1.bold(format_coin_amount(fee, coin))
 
-    t2 = Text("Confirm transaction", ui.ICON_SEND, icon_color=ui.GREEN)
-    t2.normal("network name:")
-    t2.bold(network_name)
-    t2.normal("tx size: ")
-    t2.bold("%s bytes" % tx_size)
-
-    pages = [t1, t2]
+    pages = [t1]
     paginator = paginate(create_renderer(HoldToConfirmDialog), len(pages), const(0), pages)
     return await ctx.wait(paginator) == CONFIRMED
 
@@ -57,6 +51,10 @@ async def confirm_transaction(ctx, amount, fee, tx_size, network_name, coin):
 def create_renderer(confirmation_wrapper):
     @ui.layout
     async def page_renderer(page: int, page_count: int, pages: list):
+        # for som reason page index can be equal to page count
+        if page >= page_count:
+            page = page_count - 1
+
         content = Scrollpage(pages[page], page, page_count)
         if page + 1 >= page_count:
             return await confirmation_wrapper(content)
