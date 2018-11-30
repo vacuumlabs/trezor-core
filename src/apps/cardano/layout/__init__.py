@@ -8,16 +8,16 @@ from trezor.ui.scroll import Scrollpage, animate_swipe, paginate
 from trezor.ui.text import Text
 from trezor.utils import chunks, format_amount
 
-def format_coin_amount(amount, coin):
-    return "%s %s" % (format_amount(amount, 6), coin)
+def format_coin_amount(amount):
+    return "%s %s" % (format_amount(amount, 6), "ADA")
 
 
-async def confirm_sending(ctx, amount, to, coin):
+async def confirm_sending(ctx, amount, to):
     to_lines = list(chunks(to, 17))
 
     t1 = Text("Confirm transaction", ui.ICON_SEND, icon_color=ui.GREEN)
     t1.normal("Confirm sending:")
-    t1.bold(format_coin_amount(amount, coin))
+    t1.bold(format_coin_amount(amount))
     t1.normal("to:")
     t1.bold(to_lines[0])
     pages = [t1]
@@ -36,14 +36,18 @@ async def confirm_sending(ctx, amount, to, coin):
     return True
 
 
-async def confirm_transaction(ctx, amount, fee, coin):
+async def confirm_transaction(ctx, amount, fee, network_name):
     t1 = Text("Confirm transaction", ui.ICON_SEND, icon_color=ui.GREEN)
     t1.normal("Total amount:")
-    t1.bold(format_coin_amount(amount, coin))
+    t1.bold(format_coin_amount(amount))
     t1.normal("including fee:")
-    t1.bold(format_coin_amount(fee, coin))
+    t1.bold(format_coin_amount(fee))
 
-    pages = [t1]
+    t2 = Text("Confirm transaction", ui.ICON_SEND, icon_color=ui.GREEN)
+    t2.normal("Network:")
+    t2.bold(network_name)
+
+    pages = [t1, t2]
     paginator = paginate(create_renderer(HoldToConfirmDialog), len(pages), const(0), pages)
     return await ctx.wait(paginator) == CONFIRMED
 

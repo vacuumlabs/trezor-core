@@ -23,6 +23,11 @@ from micropython import const
 MAX_CHANGE_ADDRESS_INDEX = const(1000000)
 ACCOUNT_PREFIX_DEPTH = const(2)
 
+KNOWN_PROTOCOL_MAGICS = {
+    764824073: 'Mainnet',
+    1097911063: 'Testnet'
+}
+
 
 # we consider addresses from the external chain as possible change addresses as well
 def is_change(output, inputs):
@@ -37,10 +42,7 @@ async def show_tx(
     ctx,
     outputs: list,
     outcoins: list,
-    change_derivation_paths: list,
-    change_coins: list,
     fee: float,
-    tx_size: float,
     network_name: str,
     raw_inputs: list,
     raw_outputs: list,
@@ -49,7 +51,7 @@ async def show_tx(
         if is_change(raw_outputs[index].address_n, raw_inputs): 
             continue
 
-        if not await confirm_sending(ctx, outcoins[index], output, "ADA"):
+        if not await confirm_sending(ctx, outcoins[index], output):
             return False
 
     total_amount = sum(outcoins)
@@ -57,7 +59,7 @@ async def show_tx(
         ctx,
         total_amount,
         fee,
-        "ADA"
+        network_name
     ):
         return False
 
@@ -93,7 +95,7 @@ async def sign_tx(ctx, msg):
 
         # sign the transaction bundle and prepare the result
         transaction = Transaction(
-            msg.inputs, msg.outputs, transactions, root_node, msg.network
+            msg.inputs, msg.outputs, transactions, root_node, msg.protocol_magic
         )
         tx_body, tx_hash = transaction.serialise_tx()
         tx = CardanoSignedTx(tx_body=tx_body, tx_hash=tx_hash)
@@ -108,10 +110,7 @@ async def sign_tx(ctx, msg):
         ctx,
         transaction.output_addresses,
         transaction.outgoing_coins,
-        transaction.change_derivation_paths,
-        transaction.change_coins,
         transaction.fee,
-        len(tx_body),
         transaction.network_name,
         transaction.inputs,
         transaction.outputs,
@@ -123,7 +122,7 @@ async def sign_tx(ctx, msg):
 
 class Transaction:
     def __init__(
-        self, inputs: list, outputs: list, transactions: list, root_node, network: int
+        self, inputs: list, outputs: list, transactions: list, root_node, protocol_magic: int
     ):
         self.inputs = inputs
         self.outputs = outputs
@@ -131,14 +130,9 @@ class Transaction:
         self.root_node = root_node
         # attributes have to be always empty in current Cardano
         self.attributes = {}
-        if network == 1:
-            self.network_name = "Testnet"
-            self.network_magic = b"\x01\x1a\x41\x70\xcb\x17\x58\x20"
-        elif network == 2:
-            self.network_name = "Mainnet"
-            self.network_magic = b"\x01\x1a\x2d\x96\x4a\x09\x58\x20"
-        else:
-            raise wire.ProcessError("Unknown network index %d" % network)
+
+        self.network_name = KNOWN_PROTOCOL_MAGICS.get(protocol_magic) or 'Unknown'
+        self.protocol_magic = protocol_magic
 
     def _process_inputs(self):
         input_coins = []
@@ -208,7 +202,7 @@ class Transaction:
     def _build_witnesses(self, tx_aux_hash: str):
         witnesses = []
         for index, node in enumerate(self.nodes):
-            message = self.network_magic + tx_aux_hash
+            message = b"\x01" + cbor.encode(self.protocol_magic) + "x58\x20" + tx_aux_hash
             signature = ed25519.sign_ext(
                 node.private_key(), node.private_key_ext(), message
             )
