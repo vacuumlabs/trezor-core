@@ -74,12 +74,16 @@ async def sign_tx(ctx, msg):
 
     try:
         # request transactions
-        transactions = []
         tx_req = CardanoTxRequest()
+        transaction = Transaction(
+            msg.inputs, msg.outputs, keychain, msg.protocol_magic
+        )
+
         for index in range(msg.transactions_count):
             progress.advance()
             tx_ack = await request_transaction(ctx, tx_req, index)
-            transactions.append(tx_ack.transaction)
+            tx_hash = hashlib.blake2b(data=bytes(tx_ack.transaction), outlen=32).digest()
+            transaction.tx_data[tx_hash] = cbor.decode(tx_ack.transaction)
 
         # clear progress bar
         display_homescreen()
@@ -88,9 +92,6 @@ async def sign_tx(ctx, msg):
             await validate_path(ctx, validate_full_path, keychain, i.address_n, CURVE)
 
         # sign the transaction bundle and prepare the result
-        transaction = Transaction(
-            msg.inputs, msg.outputs, transactions, keychain, msg.protocol_magic
-        )
         tx_body, tx_hash = transaction.serialise_tx()
         tx = CardanoSignedTx(tx_body=tx_body, tx_hash=tx_hash)
 
@@ -119,30 +120,24 @@ class Transaction:
         self,
         inputs: list,
         outputs: list,
-        transactions: list,
         keychain,
         protocol_magic: int,
     ):
         self.inputs = inputs
         self.outputs = outputs
-        self.transactions = transactions
         self.keychain = keychain
         # attributes have to be always empty in current Cardano
         self.attributes = {}
 
         self.network_name = KNOWN_PROTOCOL_MAGICS.get(protocol_magic, "Unknown")
         self.protocol_magic = protocol_magic
+        self.tx_data = {}
 
     def _process_inputs(self):
         input_coins = []
         input_hashes = []
         output_indexes = []
         types = []
-        tx_data = {}
-
-        for raw_transaction in self.transactions:
-            tx_hash = hashlib.blake2b(data=bytes(raw_transaction), outlen=32).digest()
-            tx_data[tx_hash] = cbor.decode(raw_transaction)
 
         for input in self.inputs:
             input_hashes.append(input.prev_hash)
@@ -156,14 +151,15 @@ class Transaction:
 
         for index, output_index in enumerate(output_indexes):
             tx_hash = bytes(input_hashes[index])
-            if tx_hash in tx_data:
-                tx = tx_data[tx_hash]
+            if tx_hash in self.tx_data:
+                tx = self.tx_data[tx_hash]
                 outputs = tx[1]
                 amount = outputs[output_index][1]
                 input_coins.append(amount)
             else:
                 raise wire.ProcessError("No tx data sent for input " + str(index))
 
+        del self.tx_data
         self.input_coins = input_coins
         self.nodes = nodes
         self.types = types
