@@ -134,37 +134,20 @@ class Transaction:
         self.tx_data = {}
 
     def _process_inputs(self):
-        input_coins = []
-        input_hashes = []
-        output_indexes = []
-        types = []
+        input_coins = 0
 
         for input in self.inputs:
-            input_hashes.append(input.prev_hash)
-            output_indexes.append(input.prev_index)
-            types.append(input.type or 0)
-
-        nodes = []
-        for input in self.inputs:
-            _, node = derive_address_and_node(self.keychain, input.address_n)
-            nodes.append(node)
-
-        for index, output_index in enumerate(output_indexes):
-            tx_hash = bytes(input_hashes[index])
+            tx_hash = bytes(input.prev_hash)
             if tx_hash in self.tx_data:
                 tx = self.tx_data[tx_hash]
                 outputs = tx[1]
-                amount = outputs[output_index][1]
-                input_coins.append(amount)
+                amount = outputs[input.prev_index][1]
+                input_coins += amount
             else:
                 raise wire.ProcessError("No tx data sent for input " + str(index))
 
         del self.tx_data
         self.input_coins = input_coins
-        self.nodes = nodes
-        self.types = types
-        self.input_hashes = input_hashes
-        self.output_indexes = output_indexes
 
     def _process_outputs(self):
         change_addresses = []
@@ -198,7 +181,8 @@ class Transaction:
 
     def _build_witnesses(self, tx_aux_hash: str):
         witnesses = []
-        for index, node in enumerate(self.nodes):
+        for input in self.inputs:
+            _, node = derive_address_and_node(self.keychain, input.address_n)
             message = (
                 b"\x01" + cbor.encode(self.protocol_magic) + b"\x58\x20" + tx_aux_hash
             )
@@ -210,7 +194,7 @@ class Transaction:
             )
             witnesses.append(
                 [
-                    self.types[index],
+                    (input.type or 0),
                     cbor.Tagged(24, cbor.encode([extended_public_key, signature])),
                 ]
             )
@@ -218,8 +202,7 @@ class Transaction:
         return witnesses
 
     @staticmethod
-    def compute_fee(input_coins: list, outgoing_coins: list, change_coins: list):
-        input_coins_sum = sum(input_coins)
+    def compute_fee(input_coins_sum: int, outgoing_coins: list, change_coins: list):
         outgoing_coins_sum = sum(outgoing_coins)
         change_coins_sum = sum(change_coins)
 
@@ -231,11 +214,11 @@ class Transaction:
         self._process_outputs()
 
         inputs_cbor = []
-        for i, output_index in enumerate(self.output_indexes):
+        for input in self.inputs:
             inputs_cbor.append(
                 [
-                    self.types[i],
-                    cbor.Tagged(24, cbor.encode([self.input_hashes[i], output_index])),
+                    (input.type or 0),
+                    cbor.Tagged(24, cbor.encode([input.prev_hash, input.prev_index])),
                 ]
             )
 
