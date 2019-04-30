@@ -73,17 +73,30 @@ async def sign_tx(ctx, msg):
     progress.init(msg.transactions_count, "Loading data")
 
     try:
+        attested = len(msg.inputs)*[False]
+        input_coins = 0
         # request transactions
         tx_req = CardanoTxRequest()
-        transaction = Transaction(
-            msg.inputs, msg.outputs, keychain, msg.protocol_magic
-        )
 
         for index in range(msg.transactions_count):
             progress.advance()
             tx_ack = await request_transaction(ctx, tx_req, index)
             tx_hash = hashlib.blake2b(data=bytes(tx_ack.transaction), outlen=32).digest()
-            transaction.tx_data[tx_hash] = cbor.decode(tx_ack.transaction)
+            tx_decoded = cbor.decode(tx_ack.transaction)
+            for i, input in enumerate(msg.inputs):
+                if bytes(input.prev_hash) == tx_hash:
+                   attested[i] = True
+                   outputs = tx_decoded[1]
+                   amount = outputs[input.prev_index][1]
+                   input_coins += amount
+
+        for index in range(len(msg.inputs)):
+            if not attested[index]:
+                raise wire.ProcessError("No tx data sent for input " + str(index))
+
+        transaction = Transaction(
+            msg.inputs, msg.outputs, keychain, msg.protocol_magic, input_coins
+        )
 
         # clear progress bar
         display_homescreen()
@@ -122,6 +135,7 @@ class Transaction:
         outputs: list,
         keychain,
         protocol_magic: int,
+        input_coins: int,
     ):
         self.inputs = inputs
         self.outputs = outputs
@@ -131,22 +145,6 @@ class Transaction:
 
         self.network_name = KNOWN_PROTOCOL_MAGICS.get(protocol_magic, "Unknown")
         self.protocol_magic = protocol_magic
-        self.tx_data = {}
-
-    def _process_inputs(self):
-        input_coins = 0
-
-        for input in self.inputs:
-            tx_hash = bytes(input.prev_hash)
-            if tx_hash in self.tx_data:
-                tx = self.tx_data[tx_hash]
-                outputs = tx[1]
-                amount = outputs[input.prev_index][1]
-                input_coins += amount
-            else:
-                raise wire.ProcessError("No tx data sent for input " + str(index))
-
-        del self.tx_data
         self.input_coins = input_coins
 
     def _process_outputs(self):
@@ -210,7 +208,6 @@ class Transaction:
 
     def serialise_tx(self):
 
-        self._process_inputs()
         self._process_outputs()
 
         inputs_cbor = []
