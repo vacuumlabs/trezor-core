@@ -74,7 +74,7 @@ async def sign_tx(ctx, msg):
 
     try:
         attested = len(msg.inputs)*[False]
-        input_coins = 0
+        input_coins_sum = 0
         # request transactions
         tx_req = CardanoTxRequest()
 
@@ -84,18 +84,17 @@ async def sign_tx(ctx, msg):
             tx_hash = hashlib.blake2b(data=bytes(tx_ack.transaction), outlen=32).digest()
             tx_decoded = cbor.decode(tx_ack.transaction)
             for i, input in enumerate(msg.inputs):
-                if bytes(input.prev_hash) == tx_hash:
+                if not attested[i] and bytes(input.prev_hash) == tx_hash:
                    attested[i] = True
                    outputs = tx_decoded[1]
                    amount = outputs[input.prev_index][1]
-                   input_coins += amount
+                   input_coins_sum += amount
 
-        for index in range(len(msg.inputs)):
-            if not attested[index]:
-                raise wire.ProcessError("No tx data sent for input " + str(index))
+        if not all(attested):
+            raise wire.ProcessError("No tx data sent for input " + str(attested.index(False)))
 
         transaction = Transaction(
-            msg.inputs, msg.outputs, keychain, msg.protocol_magic, input_coins
+            msg.inputs, msg.outputs, keychain, msg.protocol_magic, input_coins_sum
         )
 
         # clear progress bar
@@ -135,7 +134,7 @@ class Transaction:
         outputs: list,
         keychain,
         protocol_magic: int,
-        input_coins: int,
+        input_coins_sum: int,
     ):
         self.inputs = inputs
         self.outputs = outputs
@@ -145,7 +144,7 @@ class Transaction:
 
         self.network_name = KNOWN_PROTOCOL_MAGICS.get(protocol_magic, "Unknown")
         self.protocol_magic = protocol_magic
-        self.input_coins = input_coins
+        self.input_coins_sum = input_coins_sum
 
     def _process_outputs(self):
         change_addresses = []
@@ -241,7 +240,7 @@ class Transaction:
         tx_body = cbor.encode([tx_aux_cbor, witnesses])
 
         self.fee = self.compute_fee(
-            self.input_coins, self.outgoing_coins, self.change_coins
+            self.input_coins_sum, self.outgoing_coins, self.change_coins
         )
 
         return tx_body, tx_hash
